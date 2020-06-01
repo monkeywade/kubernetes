@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    base: mysql
+    k8s.eip.work/layer: basicservice
+spec:
+  serviceName: mysql-svc
+  selector:
+    matchLabels:
+      base: mysql
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        base: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:5.7
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        - name: conf
+          mountPath: /etc/mysql/mysql.conf.d
+        ports:
+        - containerPort: 33060
+          name: extend
+        - containerPort: 3306
+          name: default
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+        livenessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+        - name: MYSQL_ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        - name: LANG
+          value: "zh_CN.UTF-8"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: mysql-pvc
+      - name: conf
+        configMap:
+          name: mysql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-svc
+  labels:
+    base: mysql
+spec:
+  type: ClusterIP
+  ports:
+    - name: default
+      port: 3306
+      targetPort: 3306
+  selector:
+    base: mysql
