@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    base: kafka
+    k8s.eip.work/layer: basicservice
+spec:
+  serviceName: kafka
+  replicas: 3
+  selector:
+    matchLabels:
+      base: kafka
+  template:
+    metadata:
+      labels:
+        base: kafka
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: base
+                operator: In
+                values:
+                - kafka
+            topologyKey: kubernetes.io/hostname
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+             - weight: 1
+               podAffinityTerm:
+                 labelSelector:
+                    matchExpressions:
+                      - key: base
+                        operator: In
+                        values:
+                        - zookeeper
+                 topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: kafka
+        image: "eduosi/kafka:2.12-2.1.0"
+        command:
+        - "sh"
+        - "-c"
+        - "kafka \
+          start \
+          --host=0.0.0.0 \
+          --port=9092 \
+          --advertised_port=9092 \
+          --broker_id=auto \
+          --network_threads=4 \
+          --io_threads=4 \
+          --socket_send_buffer=102400 \
+          --socket_receive_buffer=102400 \
+          --socket_request_max=104857600 \
+          --message_max=5242880 \
+          --replica_fetch_max=5242880 \
+          --partitions_num=2 \
+          --default_replication_factor=2 \
+          --offsets_topic_replication_factor=2 \
+          --transaction_state_log_replication_factor=2 \
+          --log_flush_interval_messages=10000 \
+          --log_flush_interval=1000 \
+          --log_retention_hours=168 \
+          --zookeeper=zookeeper.default.svc.cluster.local:2181 \
+          --zookeeper_connect_timeout=6000 \
+          --heap=256M \
+          --log_level=ERROR"
+        ports:
+        - containerPort: 9092
+          name: server
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 500m
+        livenessProbe:
+          tcpSocket:
+            port: 9092
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: 9092
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        volumeMounts:
+        - name: kafka-data
+          mountPath: /var/log/kafka/
+      securityContext:
+        runAsUser: 1001
+        fsGroup: 1001
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: rbd
+      resources:
+        requests:
+          storage: 750Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    name: kafka
+spec:
+  ports:
+    - name: server
+      protocol: "TCP"
+      port: 9092
+      targetPort: 9092
+  selector:
+    base: kafka
+
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-pdb
+spec:
+  selector:
+    matchLabels:
+      base: kafka
+  minAvailable: 2
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mysql-pvc
+  labels:
+    harbor: rbd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: rbd
+  resources:
+    requests:
+      storage: 10Gi
