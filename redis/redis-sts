@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels:
+    base: redis
+    k8s.eip.work/layer: basicservice
+spec:
+  serviceName: redis-hl
+  replicas: 3
+  selector:
+    matchLabels:
+      base: redis
+  template:
+    metadata:
+      labels:
+        base: redis
+    spec:
+      terminationGracePeriodSeconds: 600
+      containers:
+      - name: redis
+        image: redis
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6379
+          name: redis
+        - containerPort: 16379
+          name: cluster
+        command:
+        - redis-server
+        args:
+        - /etc/redis/redis.conf
+        - --cluster-announce-ip
+        - "$(MY_POD_IP)"
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        resources:
+          requests:
+           memory: 1Gi
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - redis-cli shutdown save
+        livenessProbe:
+           tcpSocket:
+             port: 6379
+           initialDelaySeconds: 10
+           timeoutSeconds: 5
+           periodSeconds: 10
+           successThreshold: 1
+           failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        # These volume mounts are persistent. They are like inline claims,
+        # but not exactly because the names need to match exactly one of
+        # the stateful pod volumes.
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-conf
+          mountPath: /etc/redis
+      volumes:
+      - name: redis-conf
+        configMap:
+          name: redis-conf
+          items:
+          - key: redis.conf
+            path: redis.conf
+  # These are converted to volume claims by the controller
+  # and mounted at the paths mentioned above.
+  # do not use these in production until ssd GCEPersistentDisk or other ssd pd
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: rbd
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    base: redis-hl
+  name: redis-hl
+spec:
+  clusterIP: None
+  ports:
+  - port: 6379
+  selector:
+    base: redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-svc
+  labels:
+    name: redis-svc
+spec:
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+  selector:
+    base: redis
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+spec:
+  selector:
+    matchLabels:
+      base: redis
+  minAvailable: 2
