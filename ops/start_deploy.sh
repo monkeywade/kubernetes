@@ -2,19 +2,21 @@
 
 ##################################################################################
 # Filename   : start_deploy.sh
-# Version    : 1.0.0
+# Version    : 1.1.0
 # Description: start deployment of all appservice
 # Author     : monkeywade
 # History    : 2020-04-28 first create
+#              2020-06-03 second modify add update judgement
 ##################################################################################
 
 
-
-workdir=
-tomcat_app=
+workdir=""
+tomcat_app=""
+appbasic=""
 count=0
+
 # start app from images.list in order
-for module in `cat ${workdir}/images.list`
+for module in `cat ${workdir}/version/images.list`
 do
     service_name=$(echo ${module} |awk  -F "-" '{print $2}')
 #  service_name_lowercase=$(echo ${service_name} |tr '[A-Z]' '[a-z]')
@@ -23,8 +25,18 @@ do
     else
         file_name="${workdir}/temp/mainland-cloud-${service_name}.yaml"
     fi
-    ((count++))
-    echo "-------${count}.starting $service_name from ${file_name##*-}-------"
-    kubectl apply -f ${file_name}
-    sleep 10
+
+    cmd=$(kubectl apply -f ${file_name} --record)
+    kubectl apply -f ${file_name} --record
+    if [[ ${cmd} =~ unchanged ]];then
+        sleep 1
+    else
+        ((count++))
+        echo "-------${count}.updating $service_name from ${file_name##*-}-------"
+        if [[ ${appbasic} =~ ${service_name} ]];then
+            sleep 30
+        else
+            sleep 10
+        fi
+    fi
 done
