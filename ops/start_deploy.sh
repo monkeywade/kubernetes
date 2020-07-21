@@ -16,27 +16,36 @@ appbasic=""
 count=0
 
 # start app from images.list in order
-for module in `cat ${workdir}/version/images.list`
-do
-    service_name=$(echo ${module} |awk  -F "-" '{print $2}')
-#  service_name_lowercase=$(echo ${service_name} |tr '[A-Z]' '[a-z]')
-    if [[ ${tomcat_app} =~ ${service_name} ]];then
-        file_name="${workdir}/app_tomcat/mainland-cloud-$service_name.yaml"
-    else
-        file_name="${workdir}/temp/mainland-cloud-${service_name}.yaml"
-    fi
+function deploy(){
 
-    cmd=$(kubectl apply -f ${file_name} --record)
+    for module in `cat ${workdir}/version/images.list`
+    do
+        service_name=$(echo ${module} |awk  -F "-" '{print $2}')
 
-    if [[ ${cmd} =~ unchanged ]];then
-        sleep 1
-    else
-        ((count++))
-        echo "-------${count}.updating $service_name from ${file_name##*-}-------"
-        if [[ ${appbasic} =~ ${service_name} ]];then
-            sleep 30
+        if [[ ${tomcat_app} =~ ${service_name} ]];then
+            file_name="${workdir}/app_tomcat/mainland-cloud-$service_name.yaml"
         else
-            sleep 10
+            file_name="${workdir}/app_jar/mainland-cloud-${service_name}.yaml"
         fi
-    fi
-done
+
+        cmd=$(kubectl apply -f ${file_name} --record)
+        
+        if [[ ${cmd} =~ unchanged ]];then
+            sleep 1
+        else
+            ((count++))
+            echo "-------${count}.updating $service_name from ${file_name##*-}-------"
+            if [[ ${appbasic} =~ ${service_name} ]];then
+                sleep 30
+            else
+                sleep 10
+            fi
+        fi
+    done
+}
+
+main(){
+        deploy
+}
+
+main
