@@ -27,7 +27,7 @@ do
     fi
 
     cmd=$(kubectl apply -f ${file_name} --record)
-    kubectl apply -f ${file_name} --record
+
     if [[ ${cmd} =~ unchanged ]];then
         sleep 1
     else
