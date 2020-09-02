@@ -1,0 +1,33 @@
+#! /bin/python3
+import flask
+from flask import jsonify
+from flask import request
+
+'''
+注册接口：
+post请求，请求参数入参类型json
+{
+ "bigversion":"20200902",
+ "username":"wade",
+ "type":"test"
+}
+'''
+server = flask.Flask(__name__)
+
+@server.route('/bigversion', methods=['get', 'post'])
+def bigversionPost():
+    # 判断接口的请求方式是GET还是POST
+    if request.method == 'POST':
+        # 获取请求参数是json格式，返回结果是字典
+        params = request.json
+        try:
+            username = params.get('username')
+            bigversion = params.get('bigversion')
+            type = params.get('type')
+            print(username + type + bigversion)
+            return "OK"
+        except:
+            return "please check your params"
+
+if __name__ == '__main__':
+    server.run(debug=True, port=8899, host='0.0.0.0')
