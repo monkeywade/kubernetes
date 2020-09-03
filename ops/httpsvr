@@ -1,5 +1,7 @@
-#! /bin/python3
+#! /usr/bin/python
+
 import flask
+import os
 from flask import jsonify
 from flask import request
 
@@ -10,6 +12,7 @@ post请求，请求参数入参类型json
  "bigversion":"20200902",
  "username":"wade",
  "type":"test"
+ "update_time":"Thu Sep  3 22:04:46 CST 2020"
 }
 '''
 server = flask.Flask(__name__)
@@ -24,10 +27,25 @@ def bigversionPost():
             username = params.get('username')
             bigversion = params.get('bigversion')
             type = params.get('type')
-            print(username + type + bigversion)
-            return "OK"
+            time = params.get('update_time')
+            print(username + type + bigversion + time)
+            return jsonify({"code": 200, "msg": "message sent successfully"})
+            output = os.popen("kubectl get all -A")
+            with open("a.txt", "a") as f:
+                f.writelines(output.readlines())
+                f.writeline(time)
+
         except:
-            return "please check your params"
+            if not username:
+                return jsonify({"code":-995, "msg":"please check your username"})
+            if not bigversion:
+                return jsonify({"code":-996, "msg":"please check your bigversion"})
+            if not type:
+                return jsonify({"code":997, "msg":"please check your type"})
+            if not time:
+                return jsonify({"code":998, "msg":"please check your update_time"})
 
 if __name__ == '__main__':
+    # port可以指定端口，默认端口是5000
+    # host写成0.0.0.0的话，其他人可以访问，代表监听多块网卡上面，默认是127.0.0.1
     server.run(debug=True, port=8899, host='0.0.0.0')
