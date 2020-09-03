@@ -41,9 +41,9 @@ def bigversionPost():
             if not bigversion:
                 return jsonify({"code":-996, "msg":"please check your bigversion"})
             if not type:
-                return jsonify({"code":997, "msg":"please check your type"})
+                return jsonify({"code":-997, "msg":"please check your type"})
             if not time:
-                return jsonify({"code":998, "msg":"please check your update_time"})
+                return jsonify({"code":-998, "msg":"please check your update_time"})
 
 if __name__ == '__main__':
     # port可以指定端口，默认端口是5000
