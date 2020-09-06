@@ -11,7 +11,7 @@ post请求，请求参数入参类型json
 {
  "bigversion":"20200902",
  "username":"wade",
- "type":"test"
+ "type":"uat"
  "update_time":"Thu Sep  3 22:04:46 CST 2020"
 }
 '''
@@ -24,26 +24,28 @@ def bigversionPost():
         # 获取请求参数是json格式，返回结果是字典
         params = request.json
         try:
-            username = params.get('username')
             bigversion = params.get('bigversion')
+            email = params.get('email')
             type = params.get('type')
             time = params.get('update_time')
-            print(username + type + bigversion + time)
-            return jsonify({"code": 200, "msg": "message sent successfully"})
-            output = os.popen("kubectl get all -A")
-            with open("a.txt", "a") as f:
-                f.writelines(output.readlines())
-                f.writeline(time)
+            if type == "uat":
+                print(username + type + bigversion + time)
+                output = os.popen("kubectl get all -A >>a.txt")
+                return jsonify({"code": 200, "msg": "message sent successfully"})
+            else:
+                return jsonify({"code": 1000, "msg": "message sent successfully but type not match"})
 
         except:
-            if not username:
-                return jsonify({"code":-995, "msg":"please check your username"})
+            if not email:
+                return jsonify({"code":-995, "msg":"please check your email"})
             if not bigversion:
                 return jsonify({"code":-996, "msg":"please check your bigversion"})
             if not type:
                 return jsonify({"code":-997, "msg":"please check your type"})
             if not time:
                 return jsonify({"code":-998, "msg":"please check your update_time"})
+    else:
+        return jsonify({"code":-999, "msg":"make sure you use POST method"})
 
 if __name__ == '__main__':
     # port可以指定端口，默认端口是5000
