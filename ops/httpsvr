@@ -1,53 +1,106 @@
-#! /usr/bin/python
+#! /usr/bin/python3
+# -*- coding: utf-8 -*-
+"""
+This script is to run a http server, and receive information for deployment
 
-import flask
-import os
-from flask import jsonify
-from flask import request
-
-'''
-注册接口：
-post请求，请求参数入参类型json
+Usage:
+Content-Type:application/json
 {
  "bigversion":"20200902",
- "username":"wade",
- "type":"uat"
- "update_time":"Thu Sep  3 22:04:46 CST 2020"
+ "email":"monkeywade@test.com",
+ "type":"test"
+ "update_time":"2020-9-2 15:30:00"
 }
-'''
-server = flask.Flask(__name__)
 
+Options:
+    None
+
+"""
+
+import os
+import time
+from datetime import datetime
+import flask
+from flask import jsonify
+from flask import request
+import logging
+from logging import FileHandler
+from apscheduler.schedulers.background import BackgroundScheduler
+
+server = flask.Flask(__name__)
 @server.route('/bigversion', methods=['get', 'post'])
+
 def bigversionPost():
-    # 判断接口的请求方式是GET还是POST
+    """
+    receive "bigversion", "email", "type", "update_time" from front-end users
+
+    :param str bigversion: bigversion is a version from release system, like "20200902"
+    :param str email: no use at present, for sending emails in the future, like "monkeywade@test.com"
+    :param str type: to distinguish different enviroment, just for "test" at present
+    :param datetime update_time: time to run a update task, like "2020-9-2 15:30:00"
+    :param bool need_write: need to write message into local file
+    """
     if request.method == 'POST':
-        # 获取请求参数是json格式，返回结果是字典
         params = request.json
+        global bigversion, update_time
         try:
             bigversion = params.get('bigversion')
             email = params.get('email')
             type = params.get('type')
-            time = params.get('update_time')
-            if type == "uat":
-                print(username + type + bigversion + time)
-                output = os.popen("kubectl get all -A >>a.txt")
-                return jsonify({"code": 200, "msg": "message sent successfully"})
-            else:
-                return jsonify({"code": 1000, "msg": "message sent successfully but type not match"})
+            update_time = params.get('update_time')
 
-        except:
-            if not email:
-                return jsonify({"code":-995, "msg":"please check your email"})
-            if not bigversion:
-                return jsonify({"code":-996, "msg":"please check your bigversion"})
-            if not type:
-                return jsonify({"code":-997, "msg":"please check your type"})
-            if not time:
-                return jsonify({"code":-998, "msg":"please check your update_time"})
+            if bigversion and email and type and update_time:
+                if type == "test":
+                    # write "bigversion" and "update_time" into release_info.txt
+                    with open("release_info.txt", "r+") as f:
+                        # if "update_time" has been in release_info.txt, then break
+                        need_write = True
+                        for line in f:
+                            if update_time in line:
+                                need_write = False
+                                server.logger.warning("[WARNING] - find duplicate update_time in release_info.txt")
+                                return jsonify({"code":-994, "msg": "A task has been scheduled at %s with bigversion %s, please use another time" %
+                                                (update_time, bigversion)})
+                                break
+                        if need_write:
+                            f.write(bigversion + " " + update_time + "\n")
+                            server.logger.info("[INFO] - receive update massage: bigversion:%s at %s, send email to %s\n" % (bigversion, update_time, email))
+                            # 调用scheduleTask函数进行任务调度
+                            scheduleTask()
+                            server.logger.info("[INFO] - scheduleTask successfully")
+                            return jsonify({"code": 200, "msg": "message sent successfully, update will be run at %s" % (update_time)})
+                else:
+                    server.logger.warning("[WARNING] - type error, expect value uat")
+                    return jsonify({"code": 1000, "msg": "message sent successfully but type not match"})
+
+            else:
+                if not bigversion:
+                    server.logger.error("[ERROR] - bigversion not found")
+                    return jsonify({"code":-995, "msg":"bigversion not found"})
+                if not email:
+                    server.logger.error("[ERROR] - email not found")
+                    return jsonify({"code":-996, "msg":"email not found"})
+                if not type:
+                    server.logger.error("[ERROR] - type not found")
+                    return jsonify({"code":-997, "msg":"type not found"})
+                if not update_time:
+                    server.logger.error("[ERROR] - update_time not found")
+                    return jsonify({"code":-998, "msg":"update_time not found"})
+
+        except Exception as e:
+            raise e
+
     else:
-        return jsonify({"code":-999, "msg":"make sure you use POST method"})
+        server.logger.error("[ERROR] - method error, expect POST but others")
+        return jsonify({"code":-999, "msg":"method error"})
+
+def scheduleTask():
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(runTask, 'date', run_date=update_time)
+    scheduler.start()
+
+def runTask():
+    os.popen("bash start_deploy.sh %s >> ../log/deploy.log" % (bigversion))
 
 if __name__ == '__main__':
-    # port可以指定端口，默认端口是5000
-    # host写成0.0.0.0的话，其他人可以访问，代表监听多块网卡上面，默认是127.0.0.1
-    server.run(debug=True, port=8899, host='0.0.0.0')
+    server.run(debug=True, port=30009, host='0.0.0.0')
