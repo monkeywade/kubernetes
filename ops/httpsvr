@@ -3,104 +3,94 @@
 """
 This script is to run a http server, and receive information for deployment
 
-Usage:
-Content-Type:application/json
-{
- "bigversion":"20200902",
- "email":"monkeywade@test.com",
- "type":"test"
- "update_time":"2020-9-2 15:30:00"
-}
-
 Options:
     None
-
+    
+Version: 1.2.0
 """
 
 import os
 import time
 from datetime import datetime
 import flask
-from flask import jsonify
-from flask import request
-import logging
-from logging import FileHandler
+from flask import request, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 
 server = flask.Flask(__name__)
 @server.route('/bigversion', methods=['get', 'post'])
 
-def bigversionPost():
+def get_bigversion_from_pub():
     """
     receive "bigversion", "email", "type", "update_time" from front-end users
-
-    :param str bigversion: bigversion is a version from release system, like "20200902"
-    :param str email: no use at present, for sending emails in the future, like "monkeywade@test.com"
-    :param str type: to distinguish different enviroment, just for "test" at present
-    :param datetime update_time: time to run a update task, like "2020-9-2 15:30:00"
-    :param bool need_write: need to write message into local file
     """
-    if request.method == 'POST':
-        params = request.json
-        global bigversion, update_time
-        try:
-            bigversion = params.get('bigversion')
-            email = params.get('email')
-            type = params.get('type')
-            update_time = params.get('update_time')
-
-            if bigversion and email and type and update_time:
-                if type == "test":
-                    # write "bigversion" and "update_time" into release_info.txt
-                    with open("release_info.txt", "r+") as f:
-                        # if "update_time" has been in release_info.txt, then break
-                        need_write = True
-                        for line in f:
-                            if update_time in line:
-                                need_write = False
-                                server.logger.warning("[WARNING] - find duplicate update_time in release_info.txt")
-                                return jsonify({"code":-994, "msg": "A task has been scheduled at %s with bigversion %s, please use another time" %
-                                                (update_time, bigversion)})
-                                break
-                        if need_write:
-                            f.write(bigversion + " " + update_time + "\n")
-                            server.logger.info("[INFO] - receive update massage: bigversion:%s at %s, send email to %s\n" % (bigversion, update_time, email))
-                            # 调用scheduleTask函数进行任务调度
-                            scheduleTask()
-                            server.logger.info("[INFO] - scheduleTask successfully")
-                            return jsonify({"code": 200, "msg": "message sent successfully, update will be run at %s" % (update_time)})
-                else:
-                    server.logger.warning("[WARNING] - type error, expect value uat")
-                    return jsonify({"code": 1000, "msg": "message sent successfully but type not match"})
-
-            else:
-                if not bigversion:
-                    server.logger.error("[ERROR] - bigversion not found")
-                    return jsonify({"code":-995, "msg":"bigversion not found"})
-                if not email:
-                    server.logger.error("[ERROR] - email not found")
-                    return jsonify({"code":-996, "msg":"email not found"})
-                if not type:
-                    server.logger.error("[ERROR] - type not found")
-                    return jsonify({"code":-997, "msg":"type not found"})
-                if not update_time:
-                    server.logger.error("[ERROR] - update_time not found")
-                    return jsonify({"code":-998, "msg":"update_time not found"})
-
-        except Exception as e:
-            raise e
-
-    else:
+    if request.method != "POST":
         server.logger.error("[ERROR] - method error, expect POST but others")
-        return jsonify({"code":-999, "msg":"method error"})
+        return "method not allowd", 403
 
-def scheduleTask():
+    # get params with json format, type dict
+    params = request.json
+    try:
+        bigversion = params.get('bigversion')
+        email = params.get('email')
+        type = params.get('type')
+        update_time = params.get('update_time')
+        check_result = check_params(bigversion, email, type, update_time)
+        if not check_result[0]:
+            return check_result[1:]
+
+        # write "bigversion" and "update_time" into release_info.txt
+        with open("release_info.txt", "r+") as f:
+            # if "update_time" has been in release_info.txt, then break
+            need_write = True
+            for line in f:
+                if update_time in line:
+                    need_write = False
+                    server.logger.warning("[WARNING] - find duplicate update_time in release_info.txt")
+                    return jsonify({"msg": "A task has been scheduled at %s with bigversion %s" %
+                                    (update_time, bigversion)}), 403
+            if need_write:
+                f.write(bigversion + " " + update_time + "\n")
+                server.logger.info("[INFO] - receive update massage: bigversion:%s at %s, send email to %s\n" %
+                                   (bigversion, update_time, email))
+        # 调用scheduleTask函数进行任务调度
+        scheduleTask(bigversion, update_time)
+        server.logger.info("[INFO] - scheduleTask successfully")
+        return jsonify({"code": 200, "msg": "message sent successfully, update will be run at %s" % (update_time)})
+
+    except Exception as e:
+        raise e
+
+def check_params(bigversion, email, type, update_time):
+
+    if not bigversion:
+        server.logger.error("[ERROR] - bigversion not found")
+        return False, "bigversion not found", 501
+    if not email:
+        server.logger.error("[ERROR] - email not found")
+        return False, "email not found", 501
+    if not type:
+        server.logger.error("[ERROR] - type not found")
+        return False, "type not found", 501
+    if type != "uat":
+        server.logger.warning("[WARNING] - type error, expect value uat")
+        return False, "message sent successfully but type not match", 403
+    if not update_time:
+        server.logger.error("[ERROR] - update_time not found")
+        return False, "update_time not found", 501
+    if time.mktime(time.strptime(update_time, '%Y-%m-%d %H:%M:%S')) < time.time():
+        return False, "update_time is older than the current time", 403
+    if str(bigversion).startswith("CN_BIZ"):
+        return True, ""
+    else:
+        return False, "bigversion must start with 'CN_BIZ'"
+
+def scheduleTask(bigversion, update_time):
     scheduler = BackgroundScheduler()
-    scheduler.add_job(runTask, 'date', run_date=update_time)
+    scheduler.add_job(runTask, 'date', run_date=update_time, args=[bigversion])
     scheduler.start()
 
-def runTask():
-    os.popen("bash start_deploy.sh %s >> ../log/deploy.log" % (bigversion))
+def runTask(bigversion):
+    os.popen("python3 ./start_deploy.py %s default" % (bigversion))
 
 if __name__ == '__main__':
     server.run(debug=True, port=30009, host='0.0.0.0')
