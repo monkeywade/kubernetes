@@ -41,24 +41,21 @@ def get_bigversion_from_pub():
         # write "bigversion" and "update_time" into release_info.txt
         with open("release_info.txt", "r+") as f:
             # if "update_time" has been in release_info.txt, then break
-            need_write = True
             for line in f:
                 if update_time in line:
-                    need_write = False
                     server.logger.warning("[WARNING] - find duplicate update_time in release_info.txt")
                     return jsonify({"msg": "A task has been scheduled at %s with bigversion %s" %
-                                    (update_time, bigversion)}), 403
-            if need_write:
+                                           (update_time, bigversion)}), 403
                 f.write(bigversion + " " + update_time + "\n")
                 server.logger.info("[INFO] - receive update massage: bigversion:%s at %s, send email to %s\n" %
                                    (bigversion, update_time, email))
-        # 调用scheduleTask函数进行任务调度
-        scheduleTask(bigversion, update_time)
+        # use BackgroundScheduler to run task at update_time
+        schedule_task(bigversion, update_time)
         server.logger.info("[INFO] - scheduleTask successfully")
-        return jsonify({"code": 200, "msg": "message sent successfully, update will be run at %s" % (update_time)})
+        return jsonify({"code": 200, "msg": "message sent successfully, update will be run at %s" % update_time})
 
     except Exception as e:
-        raise e
+        server.logger.error("[ERROR] - http server internal error, the exception is %s" % e)
 
 def check_params(bigversion, email, type, update_time):
 
@@ -90,7 +87,8 @@ def scheduleTask(bigversion, update_time):
     scheduler.start()
 
 def runTask(bigversion):
-    os.popen("python3 ./start_deploy.py %s default" % (bigversion))
+    os.popen("python3 ./start_deploy.py %s default" % bigversion)
+    os.popen("python3 ./start_deploy.py %s develop" % bigversion)
 
 if __name__ == '__main__':
     server.run(debug=True, port=30009, host='0.0.0.0')
